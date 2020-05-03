@@ -10,7 +10,7 @@ function App() {
   const interpretedExpr = transpile(parse(lex(expr)));
   return (
     <div className='App'>
-      <h3>Custom language expression</h3>
+      <h3>Custom language input</h3>
       <input value={expr} onChange={(e) => setExpr(e.target.value)}></input>
       <div className='result'>
         <div className='ast'>
@@ -21,7 +21,7 @@ function App() {
           </pre>
         </div>
         <div>
-          <h3>Expression interpreted to Javascript</h3>
+          <h3>Javascript output</h3>
           <div>{interpretedExpr}</div>
         </div>
       </div>
