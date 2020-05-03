@@ -1,68 +1,160 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Custom prefix language to javascript interpreter with frontend app
 
-## Available Scripts
+### How to run
 
-In the project directory, you can run:
+In order to run the project, [node.js](https://nodejs.org/en/) must be installed.
 
-### `yarn start`
+- Run `yarn install` to install all dependencies
+- Run `yarn start` to run project locally in the browser (localhost:3000)
 
-Runs the app in the development mode.<br />
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+![img](public/app.png)
+Thanks to the web page, you can provide your own input. it will dynamically respond with interpreted Javascript expressions as well as Abstract Syntax Tree.
 
-The page will reload if you make edits.<br />
-You will also see any lint errors in the console.
+### Grammar
 
-### `yarn test`
+Grammar for this simple prefix language, according to [EBNF syntax](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form), will look like this:
 
-Launches the test runner in the interactive watch mode.<br />
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```
+digit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+num = digit+
+op = add | sub | mul | div
+expr = num | op expr+
+```
 
-### `yarn build`
+It is a simple language that allows basic arithmetic operations on `0-9` digits that can be composed into bigger numbers.
 
-Builds the app for production to the `build` folder.<br />
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Node Types
 
-The build is minified and the filenames include the hashes.<br />
-Your app is ready to be deployed!
+##### `/src/interpreter/nodeTypes.js`
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```js
+export const Op = "Operation";
+export const Num = "Number";
+```
 
-### `yarn eject`
+There are two node types defined: `Operation` and `Number`. Those will be present later on in Abstract Syntax Tree.
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+### Lexical Analyzer (Lexer)
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+##### `/src/interpreter/lexer.js`
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+```js
+export const lex = (expr) =>
+  expr
+    .split(" ")
+    .map((word) => word.trim())
+    .filter((word) => word.length);
+```
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+The purpose of lexical analyzer is to divide the expressions into small chunks called tokens. Each token has a label that provides lexical explanation of it.
+For the example `add 5 3`, lexer's output will be:
 
-## Learn More
+```js
+["add", "3", "5"];
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Parser
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+##### `/src/interpreter/parser.js`
 
-### Code Splitting
+```js
+import { Op, Num } from "./nodeTypes";
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
+export const parse = (tokens) => {
+  let char = 0;
 
-### Analyzing the Bundle Size
+  const peek = () => tokens[char];
+  const consume = () => tokens[char++];
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
+  const parseNumber = () => ({ val: parseInt(consume()), type: Num });
 
-### Making a Progressive Web App
+  const parseOperator = () => {
+    const node = { val: consume(), type: Op, expr: [] };
+    while (peek()) node.expr.push(parseExpr());
+    return node;
+  };
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
+  const parseExpr = () => (/\d/.test(peek()) ? parseNumber() : parseOperator());
+  return parseExpr();
+};
+```
 
-### Advanced Configuration
+Parser will create an `Abstract Syntax Tree` out of the tokens.
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
+For the output from lexical analyzer:
 
-### Deployment
+```js
+["add", "3", "5"];
+```
+It'll parse each token individually, checking with the regular expression whether it's a `Number` or `Operation`:
+```js
+(/\d/.test(peek()) ? parseNumber() : parseOperator());
+```
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
+Parser will create the following tree structure:
 
-### `yarn build` fails to minify
+```json
+{
+  "val": "add",
+  "type": "Operation",
+  "expr": [
+    {
+      "val": 5,
+      "type": "Number"
+    },
+    {
+      "val": 3,
+      "type": "Number"
+    }
+  ]
+}
+```
 
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+### Transpiler
+
+##### `/src/interpreter/transpiler.js`
+
+```js
+import { Op, Num } from "./nodeTypes";
+
+export const transpile = (ast) => {
+  const opMap = { add: "+", mul: "*", sub: "-", div: "/" };
+  const transpileNode = (ast) =>
+    ast.type === Num ? transpileNum(ast) : transpileOp(ast);
+  const transpileNum = (ast) => ast.val;
+  const transpileOp = (ast) =>
+    `(${ast.expr.map(transpileNode).join(" " + opMap[ast.val] + " ")})`;
+  return transpileNode(ast);
+};
+```
+
+Transpiler is a function that will convert the `AST` produced by the parser to javascript code using mappers for all specified operations:
+
+```js
+const opMap = { add: "+", mul: "*", sub: "-", div: "/" };
+```
+
+For the previously defined `AST`:
+
+```json
+{
+  "val": "add",
+  "type": "Operation",
+  "expr": [
+    {
+      "val": 5,
+      "type": "Number"
+    },
+    {
+      "val": 3,
+      "type": "Number"
+    }
+  ]
+}
+```
+
+it'll produce:
+
+```js
+5 + 3
+```
